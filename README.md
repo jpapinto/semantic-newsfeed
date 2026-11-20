@@ -16,8 +16,10 @@ A weekend project to explore vector databases and LLM pipelines. A Spring Boot s
 
 ## Prerequisites & Setup
 
+Requires **Java 21, Maven and Docker**.
+
 ### 1. Model Provider Configuration (Important)
-The endpoint, the models and the API key are read from environment variables, so **no key is ever stored in the repository**. Do not paste a key into `application.yml` or any other tracked file; if you prefer a file, use a local `.env` (already listed in `.gitignore`).
+The endpoint, the models and the API key are read from environment variables (set them in the same terminal you run the app from), so **no key is ever stored in the repository**. Do not paste a key into `application.yml` or any other tracked file; if you prefer a file, use a local `.env` (already listed in `.gitignore`).
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -39,7 +41,7 @@ docker exec ollama ollama pull nomic-embed-text
 
 export OPENAI_API_KEY="ollama"            # Ollama ignores the key, but one must be set
 export AI_BASE_URL="http://localhost:11434/v1"
-export CHAT_MODEL="qwen2.5:0.5b"
+export CHAT_MODEL="qwen2.5:0.5b"          # tiny and fast; e.g. llama3.2:3b classifies better
 export EMBEDDING_MODEL="nomic-embed-text"
 ```
 
@@ -59,6 +61,8 @@ Once the database is running, launch the Spring Boot application:
 mvn clean spring-boot:run
 ```
 
+The first ingestion runs ~5 seconds after startup and then every 4 hours (at most 5 new articles per feed per run); until it finishes, searches return an empty list. Reddit sometimes rejects automated RSS requests (HTTP 429): the app logs it and continues with the other feed.
+
 -----
 
 ## Database Migrations (Flyway)
@@ -68,8 +72,9 @@ Database schemas are managed automatically using **Flyway**. When the applicatio
 The initial script (`V1__init.sql`) automatically:
 
 1.  Enables the `pgvector` extension.
-2.  Creates the `articles` table with a `vector(768)` column for embeddings.
-3.  Builds an `HNSW` (Hierarchical Navigable Small World) index using `vector_cosine_ops` to ensure semantic searches are fast.
+2.  Creates the `articles` table (title, URL, summary, category, publication date).
+
+The embeddings live in Spring AI's `vector_store` table (768 dimensions, `HNSW` index with cosine distance for fast semantic search), linked to each article by its UUID.
 
 -----
 
@@ -96,7 +101,7 @@ Retrieves a specific article from the database using its unique UUID.
 {
   "id": "43f8b082-b575-4cdf-a32d-0048ded6b3d0",
   "title": "CEO of America’s largest public hospital system says he’s ready to replace radiologists with AI",
-  "url": "[https://www.reddit.com/r/technology/comments/1s942fa/ceo_of_americas_largest_public_hospital_system/](https://www.reddit.com/r/technology/comments/1s942fa/ceo_of_americas_largest_public_hospital_system/)",
+  "url": "https://www.reddit.com/r/technology/comments/1s942fa/ceo_of_americas_largest_public_hospital_system/",
   "summary": "",
   "category": "Artificial Intelligence & Emerging Tech",
   "publishedAt": "2026-03-31T23:41:00Z"
@@ -112,9 +117,14 @@ Accepted `category` values (case-insensitive): `CYBERSECURITY`, `AI_AND_EMERGING
 
 *Execution of semantic search.*
 
-**Example Query:** `?query=Microsoft faced several security challenges.`
+**Example:**
 
-**Example Response:**
+```bash
+curl "http://localhost:8080/api/news/search?query=Microsoft%20faced%20several%20security%20challenges"
+# add &category=CYBERSECURITY to restrict results to one category
+```
+
+**Example Response** (abridged to the first of the 3 results):
 
 ```json
 [
@@ -122,34 +132,12 @@ Accepted `category` values (case-insensitive): `CYBERSECURITY`, `AI_AND_EMERGING
     "article": {
       "id": "9d8c44e8-58b9-4745-8de0-a7a7e21d267f",
       "title": "Federal cyber experts called Microsoft's cloud a \"pile of shit,\" approved it anyway",
-      "url": "[https://arstechnica.com/information-technology/2026/03/federal-cyber-experts-called-microsofts-cloud-a-pile-of-shit-approved-it-anyway/](https://arstechnica.com/information-technology/2026/03/federal-cyber-experts-called-microsofts-cloud-a-pile-of-shit-approved-it-anyway/)",
+      "url": "https://arstechnica.com/information-technology/2026/03/federal-cyber-experts-called-microsofts-cloud-a-pile-of-shit-approved-it-anyway/",
       "summary": "One Microsoft product was approved despite years of concerns about its security.",
       "category": "Cybersecurity",
       "publishedAt": "2026-03-18T17:36:40Z"
     },
     "similarityScore": 0.5837
-  },
-  {
-    "article": {
-      "id": "a716c027-b19e-4452-9e00-0abbf053b240",
-      "title": "Microsoft closes worst quarter on Wall Street since 2008 on AI concerns / Microsoft lost almost a quarter of its value in the first three months of the year, its steepest quarterly drop since the 2008 financial crisis.",
-      "url": "[https://www.reddit.com/r/technology/comments/1s8z34p/microsoft_closes_worst_quarter_on_wall_street/](https://www.reddit.com/r/technology/comments/1s8z34p/microsoft_closes_worst_quarter_on_wall_street/)",
-      "summary": "",
-      "category": "Tech Industry & Business",
-      "publishedAt": "2026-03-31T20:27:05Z"
-    },
-    "similarityScore": 0.5192
-  },
-  {
-    "article": {
-      "id": "429318d3-0911-411f-8e3a-827438780822",
-      "title": "The who, what, and why of the attack that has shut down Stryker's Windows network",
-      "url": "[https://arstechnica.com/security/2026/03/whats-known-about-wiper-attack-on-stryker-a-major-supplier-of-lifesaving-devices/](https://arstechnica.com/security/2026/03/whats-known-about-wiper-attack-on-stryker-a-major-supplier-of-lifesaving-devices/)",
-      "summary": "Company says it doesn't know how long it will take to restore its Microsoft environment.",
-      "category": "Cybersecurity",
-      "publishedAt": "2026-03-12T22:18:11Z"
-    },
-    "similarityScore": 0.4787
   }
 ]
 ```
@@ -158,7 +146,7 @@ Accepted `category` values (case-insensitive): `CYBERSECURITY`, `AI_AND_EMERGING
 
 ## Testing Strategy
 
-Run the test suite using:
+Run the test suite using (Docker must be running for the Testcontainers test):
 
 ```bash
 mvn test
