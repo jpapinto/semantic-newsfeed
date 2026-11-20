@@ -18,18 +18,21 @@ spring:
 
   ai:
     openai:
-      api-key: ${GITHUB_API_KEY}
-      base-url: https://models.inference.ai.azure.com
+      # Any OpenAI-compatible endpoint, set through environment variables (see README):
+      # OpenAI API by default, or a local Ollama (AI_BASE_URL=http://localhost:11434/v1).
+      api-key: ${OPENAI_API_KEY}
+      base-url: ${AI_BASE_URL:https://api.openai.com/v1}
       chat:
-        # Forces Spring AI to drop the /v1 prefix
+        # base-url already ends with /v1
         completions-path: /chat/completions
         options:
-          model: gpt-4o-mini
+          model: ${CHAT_MODEL:gpt-4o-mini}
       embedding:
-        # Forces Spring AI to drop the /v1 prefix
+        # base-url already ends with /v1
         embeddings-path: /embeddings
         options:
-          model: text-embedding-3-small
+          model: ${EMBEDDING_MODEL:text-embedding-3-small}
+          # Must match the vector store dimensions below (nomic-embed-text in Ollama is also 768)
           dimensions: 768
 
     vectorstore:
