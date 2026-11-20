@@ -1,0 +1,46 @@
+spring:
+  application:
+    name: newsfeed-service
+  
+  datasource:
+    url: jdbc:postgresql://localhost:5432/newsfeed
+    username: user
+    password: password
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  ai:
+    openai:
+      api-key: ${GITHUB_API_KEY}
+      base-url: https://models.inference.ai.azure.com
+      chat:
+        # Forces Spring AI to drop the /v1 prefix
+        completions-path: /chat/completions
+        options:
+          model: gpt-4o-mini
+      embedding:
+        # Forces Spring AI to drop the /v1 prefix
+        embeddings-path: /embeddings
+        options:
+          model: text-embedding-3-small
+          dimensions: 768
+
+    vectorstore:
+      pgvector:
+        index-type: HNSW
+        distance-type: COSINE_DISTANCE
+        dimensions: 768
+        initialize-schema: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info
